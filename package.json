@@ -1,0 +1,20 @@
+{
+  "name": "gram-bot",
+  "version": "1.0.0",
+  "description": "Telegram-бот для взаимного пиара (подписки/задания) с оплатой в Telegram Stars и админ-панелью",
+  "main": "src/bot.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/bot.js",
+    "admin": "node admin-panel/server.js",
+    "start:all": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "dotenv": "^16.4.5",
+    "nanoid": "^3.3.7"
+  }
+}
