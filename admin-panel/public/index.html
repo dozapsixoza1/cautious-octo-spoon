@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GRAM · Пульт управления</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- Экран входа -->
+<section id="login-screen" class="login-screen">
+  <div class="login-card">
+    <div class="login-mark">◈ GRAM</div>
+    <h1>Пульт владельца</h1>
+    <p class="muted">Доступ только для администратора сервиса.</p>
+    <form id="login-form">
+      <label>Логин
+        <input type="text" id="login" autocomplete="username" required />
+      </label>
+      <label>Пароль
+        <input type="password" id="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit">Войти в пульт</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+</section>
+
+<!-- Основной интерфейс -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand">◈ GRAM</div>
+    <nav>
+      <button class="nav-btn active" data-view="dashboard">Обзор</button>
+      <button class="nav-btn" data-view="users">Пользователи</button>
+      <button class="nav-btn" data-view="tasks">Задания</button>
+      <button class="nav-btn" data-view="ledger">Леджер</button>
+    </nav>
+    <button id="logout" class="logout-btn">Выйти</button>
+  </aside>
+
+  <main class="main">
+    <!-- Тикер-лента последних транзакций — фирменный элемент пульта -->
+    <div class="ticker-wrap">
+      <div class="ticker" id="ticker"></div>
+    </div>
+
+    <section id="view-dashboard" class="view">
+      <h1>Обзор системы</h1>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <span class="stat-label">Пользователей</span>
+          <span class="stat-value mono" id="stat-users">—</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Активных заданий</span>
+          <span class="stat-value mono" id="stat-tasks">—</span>
+        </div>
+        <div class="stat-card accent-violet">
+          <span class="stat-label">GRAM в обороте</span>
+          <span class="stat-value mono" id="stat-gram">—</span>
+        </div>
+        <div class="stat-card accent-gold">
+          <span class="stat-label">Получено Stars ⭐</span>
+          <span class="stat-value mono" id="stat-stars">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-users" class="view hidden">
+      <h1>Пользователи</h1>
+      <input type="text" id="user-search" placeholder="Поиск по id, username, имени…" class="search-input" />
+      <table class="data-table">
+        <thead><tr><th>ID</th><th>Имя</th><th>Баланс</th><th>Рефералов</th><th>Статус</th><th>Действия</th></tr></thead>
+        <tbody id="users-body"></tbody>
+      </table>
+    </section>
+
+    <section id="view-tasks" class="view hidden">
+      <h1>Задания</h1>
+      <table class="data-table">
+        <thead><tr><th>ID</th><th>Владелец</th><th>Тип</th><th>Цель</th><th>Награда</th><th>Остаток</th><th>Статус</th><th>Действия</th></tr></thead>
+        <tbody id="tasks-body"></tbody>
+      </table>
+    </section>
+
+    <section id="view-ledger" class="view hidden">
+      <h1>Леджер операций</h1>
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Пользователь</th><th>Тип</th><th>Сумма</th><th>Описание</th><th>Время</th></tr></thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+        </html>
