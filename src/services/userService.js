@@ -85,6 +85,15 @@ function getStats() {
   return { usersCount, activeTasksCount, totalGramInCirculation, starsIncome };
 }
 
+function isCaptchaPassed(userId) {
+  const u = getUser(userId);
+  return !!(u && u.captcha_passed);
+}
+
+function setCaptchaPassed(userId, passed) {
+  db.prepare('UPDATE users SET captcha_passed = ? WHERE id = ?').run(passed ? 1 : 0, userId);
+}
+
 module.exports = {
   getUser,
   ensureUser,
@@ -95,4 +104,6 @@ module.exports = {
   countUsers,
   setBanned,
   getStats,
+  isCaptchaPassed,
+  setCaptchaPassed,
 };
