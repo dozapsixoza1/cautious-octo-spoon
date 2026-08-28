@@ -2,7 +2,9 @@ const { Telegraf, Markup, session } = require('telegraf');
 const config = require('./config');
 const userService = require('./services/userService');
 const taskService = require('./services/taskService');
-const { PACKAGES } = require('./services/paymentService');
+const { getPackages } = require('./services/paymentService');
+const { getSetting } = require('./services/settingsService');
+const { registerAdmin, isOwner, ADMIN_ENTRY_BUTTON } = require('./handlers/admin');
 
 if (!config.BOT_TOKEN) {
   console.error('BOT_TOKEN не задан в .env — бот не может запуститься.');
@@ -10,14 +12,22 @@ if (!config.BOT_TOKEN) {
 }
 
 const bot = new Telegraf(config.BOT_TOKEN);
-bot.use(session({ defaultSession: () => ({ step: null, draft: {} }) }));
+bot.use(session({ defaultSession: () => ({ step: null, draft: {}, admin: {} }) }));
+
+// Регистрируем обработчики админ-панели ДО остальных текстовых хендлеров,
+// чтобы шаги вида admin_* перехватывались первыми (иначе next() всё равно передаст дальше).
+registerAdmin(bot);
 
 // ---------- Клавиатуры ----------
-const mainMenu = Markup.keyboard([
-  ['📋 Задания', '➕ Создать задание'],
-  ['💰 Баланс', '💳 Пополнить'],
-  ['🗂 Мои задания', '👥 Рефералы'],
-]).resize();
+function mainMenu(ctx) {
+  const rows = [
+    ['📋 Задания', '➕ Создать задание'],
+    ['💰 Баланс', '💳 Пополнить'],
+    ['🗂 Мои задания', '👥 Рефералы'],
+  ];
+  if (isOwner(ctx)) rows.push([ADMIN_ENTRY_BUTTON]);
+  return Markup.keyboard(rows).resize();
+}
 
 function taskInlineKeyboard(taskId) {
   return Markup.inlineKeyboard([Markup.button.callback('✅ Выполнить', `do_${taskId}`)]);
@@ -40,7 +50,7 @@ bot.start((ctx) => {
       `Это сервис взаимного продвижения. Выполняй задания и получай GRAM, ` +
       `или создавай свои задания, чтобы продвинуть канал.\n\n` +
       `Баланс: ${user.balance} GRAM`,
-    mainMenu
+    mainMenu(ctx)
   );
 });
 
@@ -156,40 +166,76 @@ bot.on('text', async (ctx, next) => {
     }
     ctx.session.draft.reward = reward;
     ctx.session.step = 'new_task_slots';
-    return ctx.reply('Сколько всего выполнений хотите купить? (например 50)');
+    return askSlots(ctx, reward);
   }
 
   if (step === 'new_task_slots') {
-    const slots = parseInt(ctx.message.text.trim(), 10);
-    if (!Number.isInteger(slots) || slots <= 0) {
-      return ctx.reply('Введите положительное целое число.');
-    }
-    const draft = ctx.session.draft;
-    const total = draft.reward * slots;
-    const user = userService.getUser(ctx.from.id);
-
-    if (!user || user.balance < total) {
-      ctx.session.step = null;
-      return ctx.reply(
-        `❌ Недостаточно средств. Нужно ${total} GRAM, на балансе ${user ? user.balance : 0} GRAM.\n` +
-          `Пополните баланс через «💳 Пополнить».`
-      );
-    }
-
-    draft.slots = slots;
-    ctx.session.step = 'new_task_confirm';
-    return ctx.reply(
-      `Проверьте задание:\nТип: ${draft.type === 'subscribe_channel' ? 'Подписка' : 'Просмотр поста'}\n` +
-        `Цель: ${draft.target}\nНаграда за выполнение: ${draft.reward} GRAM\nКоличество: ${slots}\n` +
-        `Итого спишется: ${total} GRAM\n\nПодтвердить?`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Создать', 'confirm_task')],
-        [Markup.button.callback('❌ Отмена', 'cancel_task')],
-      ])
-    );
+    return handleSlotsInput(ctx, ctx.message.text.trim());
   }
 
   return next();
+});
+
+// Считает, сколько выполнений максимум доступно на текущий баланс, и предлагает кнопки быстрого выбора
+function askSlots(ctx, reward) {
+  const user = userService.getUser(ctx.from.id);
+  const balance = user ? user.balance : 0;
+  const maxAffordable = Math.floor(balance / reward);
+
+  const presets = [10, 25, 50, 100].filter((n) => n <= maxAffordable);
+  const buttons = presets.map((n) => Markup.button.callback(`${n}`, `slots_${n}`));
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+  if (maxAffordable > 0) rows.push([Markup.button.callback(`Максимум (${maxAffordable})`, `slots_${maxAffordable}`)]);
+  rows.push([Markup.button.callback('❌ Отмена', 'cancel_task')]);
+
+  return ctx.reply(
+    `Сколько всего выполнений хотите купить? (например 50)\n\n` +
+      `💰 Доступно для вашего баланса: ${maxAffordable} шт. (баланс ${balance} GRAM, цена ${reward} GRAM за 1 выполнение)`,
+    Markup.inlineKeyboard(rows)
+  );
+}
+
+function slotsConfirmMessage(ctx, slots) {
+  const draft = ctx.session.draft;
+  const total = draft.reward * slots;
+  const user = userService.getUser(ctx.from.id);
+
+  if (!user || user.balance < total) {
+    ctx.session.step = null;
+    return ctx.reply(
+      `❌ Недостаточно средств. Нужно ${total} GRAM, на балансе ${user ? user.balance : 0} GRAM.\n` +
+        `Пополните баланс через «💳 Пополнить».`
+    );
+  }
+
+  draft.slots = slots;
+  ctx.session.step = 'new_task_confirm';
+  return ctx.reply(
+    `Проверьте задание:\nТип: ${draft.type === 'subscribe_channel' ? 'Подписка' : 'Просмотр поста'}\n` +
+      `Цель: ${draft.target}\nНаграда за выполнение: ${draft.reward} GRAM\nКоличество: ${slots}\n` +
+      `Итого спишется: ${total} GRAM\n\nПодтвердить?`,
+    Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Создать', 'confirm_task')],
+      [Markup.button.callback('❌ Отмена', 'cancel_task')],
+    ])
+  );
+}
+
+function handleSlotsInput(ctx, rawText) {
+  const slots = parseInt(rawText, 10);
+  if (!Number.isInteger(slots) || slots <= 0) {
+    return ctx.reply('Введите положительное целое число.');
+  }
+  return slotsConfirmMessage(ctx, slots);
+}
+
+// Нажатие на кнопку быстрого выбора количества
+bot.action(/slots_(\d+)/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (ctx.session.step !== 'new_task_slots') return;
+  const slots = Number(ctx.match[1]);
+  await slotsConfirmMessage(ctx, slots);
 });
 
 bot.action('confirm_task', (ctx) => {
@@ -269,7 +315,7 @@ bot.hears('👥 Рефералы', (ctx) =>
       ? `https://t.me/${config.BOT_USERNAME}?start=ref_${ctx.from.id}`
       : '(укажите BOT_USERNAME в .env, чтобы сформировать ссылку)';
     ctx.reply(
-      `👥 Приглашено: ${u.ref_count}\n💰 Бонус за реферала: ${config.REFERRAL_BONUS} GRAM\n\nВаша ссылка:\n${link}`
+      `👥 Приглашено: ${u.ref_count}\n💰 Бонус за реферала: ${getSetting('referral_bonus')} GRAM\n\nВаша ссылка:\n${link}`
     );
   })
 );
@@ -280,7 +326,7 @@ bot.hears('💳 Пополнить', (ctx) =>
     ctx.reply(
       'Выберите пакет пополнения (оплата в Telegram Stars ⭐):',
       Markup.inlineKeyboard(
-        PACKAGES.map((p) => [Markup.button.callback(`${p.stars} ⭐ → ${p.gram} GRAM`, `buy_${p.stars}`)])
+        getPackages().map((p) => [Markup.button.callback(`${p.stars} ⭐ → ${p.gram} GRAM`, `buy_${p.stars}`)])
       )
     );
   })
@@ -289,7 +335,7 @@ bot.hears('💳 Пополнить', (ctx) =>
 bot.action(/buy_(\d+)/, async (ctx) => {
   await ctx.answerCbQuery();
   const stars = Number(ctx.match[1]);
-  const pkg = PACKAGES.find((p) => p.stars === stars);
+  const pkg = getPackages().find((p) => p.stars === stars);
   if (!pkg) return;
 
   await ctx.replyWithInvoice({
