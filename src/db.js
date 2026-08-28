@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   ref_by INTEGER,                      -- кто пригласил (telegram id)
   ref_count INTEGER NOT NULL DEFAULT 0,
   is_banned INTEGER NOT NULL DEFAULT 0,
+  captcha_passed INTEGER NOT NULL DEFAULT 0, -- прошёл ли проверку "выберите животное"
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -63,5 +64,11 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 `);
+
+// Миграция для уже существующих баз, созданных до появления капчи
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userColumns.includes('captcha_passed')) {
+  db.exec('ALTER TABLE users ADD COLUMN captcha_passed INTEGER NOT NULL DEFAULT 0');
+}
 
 module.exports = db;
