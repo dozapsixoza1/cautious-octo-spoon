@@ -5,9 +5,9 @@
   "main": "src/bot.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/bot.js",
-    "admin": "node admin-panel/server.js",
-    "start:all": "node index.js"
+    "start": "node index.js",
+    "bot": "node src/bot.js",
+    "admin": "node admin-panel/server.js"
   },
   "dependencies": {
     "telegraf": "^4.16.3",
