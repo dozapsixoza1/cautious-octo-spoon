@@ -95,6 +95,44 @@ function deleteTask(taskId, ownerId) {
   return true;
 }
 
+// ---------- Админские функции (без проверки владельца) ----------
+function listAllTasks(offset = 0, limit = 5) {
+  return db
+    .prepare(
+      `SELECT t.*, u.username, u.first_name FROM tasks t
+       LEFT JOIN users u ON u.id = t.owner_id
+       WHERE t.status != 'deleted'
+       ORDER BY t.created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset);
+}
+
+function countAllTasks() {
+  return db.prepare("SELECT COUNT(*) c FROM tasks WHERE status != 'deleted'").get().c;
+}
+
+function adminPauseTask(taskId) {
+  return db.prepare("UPDATE tasks SET status = 'paused' WHERE id = ? AND status = 'active'").run(taskId).changes;
+}
+
+function adminResumeTask(taskId) {
+  return db.prepare("UPDATE tasks SET status = 'active' WHERE id = ? AND status = 'paused'").run(taskId).changes;
+}
+
+function adminDeleteTask(taskId) {
+  const task = db
+    .prepare("SELECT * FROM tasks WHERE id = ? AND status IN ('active','paused')")
+    .get(taskId);
+  if (!task) return false;
+  const refund = task.reward * task.slots_left;
+  db.prepare("UPDATE tasks SET status = 'deleted' WHERE id = ?").run(taskId);
+  if (refund > 0) {
+    addBalance(task.owner_id, refund, 'task_refund', `Задание #${taskId} удалено администратором`);
+  }
+  return true;
+}
+
 module.exports = {
   createTask,
   listAvailableTasks,
@@ -105,4 +143,9 @@ module.exports = {
   pauseTask,
   resumeTask,
   deleteTask,
+  listAllTasks,
+  countAllTasks,
+  adminPauseTask,
+  adminResumeTask,
+  adminDeleteTask,
 };
