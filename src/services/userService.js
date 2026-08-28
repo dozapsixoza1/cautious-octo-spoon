@@ -1,5 +1,5 @@
 const db = require('../db');
-const { REFERRAL_BONUS } = require('../config');
+const { getSetting } = require('./settingsService');
 
 function getUser(id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
@@ -21,7 +21,7 @@ function ensureUser(tgUser, refBy) {
 
   if (validRef) {
     db.prepare('UPDATE users SET ref_count = ref_count + 1 WHERE id = ?').run(validRef);
-    addBalance(validRef, REFERRAL_BONUS, 'referral_bonus', `Приглашён пользователь ${tgUser.id}`);
+    addBalance(validRef, getSetting('referral_bonus'), 'referral_bonus', `Приглашён пользователь ${tgUser.id}`);
   }
 
   return getUser(tgUser.id);
@@ -43,4 +43,56 @@ function isBanned(userId) {
   return !!(u && u.is_banned);
 }
 
-module.exports = { getUser, ensureUser, addBalance, hasEnough, isBanned };
+// ---------- Админские функции ----------
+function listUsers(offset = 0, limit = 5, query = '') {
+  const q = query.trim();
+  if (q) {
+    return db
+      .prepare(
+        `SELECT * FROM users WHERE CAST(id AS TEXT) LIKE ? OR username LIKE ? OR first_name LIKE ?
+         ORDER BY created_at DESC LIMIT ? OFFSET ?`
+      )
+      .all(`%${q}%`, `%${q}%`, `%${q}%`, limit, offset);
+  }
+  return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+}
+
+function countUsers(query = '') {
+  const q = query.trim();
+  if (q) {
+    return db
+      .prepare(
+        `SELECT COUNT(*) c FROM users WHERE CAST(id AS TEXT) LIKE ? OR username LIKE ? OR first_name LIKE ?`
+      )
+      .get(`%${q}%`, `%${q}%`, `%${q}%`).c;
+  }
+  return db.prepare('SELECT COUNT(*) c FROM users').get().c;
+}
+
+function setBanned(userId, banned) {
+  db.prepare('UPDATE users SET is_banned = ? WHERE id = ?').run(banned ? 1 : 0, userId);
+}
+
+function getStats() {
+  const usersCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
+  const activeTasksCount = db.prepare("SELECT COUNT(*) c FROM tasks WHERE status='active'").get().c;
+  const totalGramInCirculation = db.prepare('SELECT COALESCE(SUM(balance),0) s FROM users').get().s;
+  const starsIncome = db
+    .prepare(
+      "SELECT COALESCE(SUM(CAST(substr(meta, 8, instr(meta,' XTR')-8) AS INTEGER)),0) s FROM transactions WHERE type='topup_stars'"
+    )
+    .get().s;
+  return { usersCount, activeTasksCount, totalGramInCirculation, starsIncome };
+}
+
+module.exports = {
+  getUser,
+  ensureUser,
+  addBalance,
+  hasEnough,
+  isBanned,
+  listUsers,
+  countUsers,
+  setBanned,
+  getStats,
+};
