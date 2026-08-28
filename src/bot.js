@@ -5,6 +5,7 @@ const taskService = require('./services/taskService');
 const { getPackages } = require('./services/paymentService');
 const { getSetting } = require('./services/settingsService');
 const { registerAdmin, isOwner, ADMIN_ENTRY_BUTTON } = require('./handlers/admin');
+const { registerCaptcha, captchaGuard, sendCaptcha } = require('./handlers/captcha');
 
 if (!config.BOT_TOKEN) {
   console.error('BOT_TOKEN не задан в .env — бот не может запуститься.');
@@ -12,7 +13,10 @@ if (!config.BOT_TOKEN) {
 }
 
 const bot = new Telegraf(config.BOT_TOKEN);
-bot.use(session({ defaultSession: () => ({ step: null, draft: {}, admin: {} }) }));
+bot.use(session({ defaultSession: () => ({ step: null, draft: {}, admin: {}, captcha: null }) }));
+
+// Капча — до всего остального: пока не пройдена, никакие другие команды не работают
+bot.use(captchaGuard);
 
 // Регистрируем обработчики админ-панели ДО остальных текстовых хендлеров,
 // чтобы шаги вида admin_* перехватывались первыми (иначе next() всё равно передаст дальше).
@@ -45,6 +49,13 @@ bot.start((ctx) => {
   if (userService.isBanned(user.id)) {
     return ctx.reply('🚫 Ваш аккаунт заблокирован. По вопросам — обратитесь к администратору.');
   }
+  if (!isOwner(ctx) && !userService.isCaptchaPassed(user.id)) {
+    return sendCaptcha(ctx);
+  }
+  return sendWelcome(ctx, user);
+});
+
+function sendWelcome(ctx, user) {
   ctx.reply(
     `Привет, ${ctx.from.first_name || 'друг'}! 👋\n\n` +
       `Это сервис взаимного продвижения. Выполняй задания и получай GRAM, ` +
@@ -52,6 +63,12 @@ bot.start((ctx) => {
       `Баланс: ${user.balance} GRAM`,
     mainMenu(ctx)
   );
+}
+
+// После успешного прохождения капчи показываем то же приветствие
+registerCaptcha(bot, (ctx) => {
+  const user = userService.getUser(ctx.from.id);
+  if (user) sendWelcome(ctx, user);
 });
 
 function guardBanned(ctx, next) {
